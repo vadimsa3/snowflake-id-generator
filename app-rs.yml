@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: snow-replicaset
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: snow
+  template:
+    metadata:
+      labels:
+        app: snow
+    spec:
+      initContainers: # генерирует случайный worker-id (0-31) и сохраняет его в файл + логирует
+        - name: worker-id-generator
+          image: vadimsavchuk/my-repo:snowflake-2.1
+          command:
+            - sh
+            - -c
+            - |
+              WORKER_ID=$(( $(date +%s%N) % 32 ))
+              echo $WORKER_ID > /etc/snowflake/worker-id.properties
+              echo "Generated worker-id: $WORKER_ID"
+          volumeMounts:
+            - name: worker-config-volume
+              mountPath: /etc/snowflake
+      containers:
+        - name: snowflake
+          image: vadimsavchuk/my-repo:snowflake-2.1 # локальный snowflake:1.0 не работает с кластером kind нужен удаленный образ
+          env:
+            - name: spring.application.name
+              valueFrom:
+                configMapKeyRef:
+                  name: snow-config
+                  key: spring.application.name
+            - name: snowflake-settings.starting-epoch
+              valueFrom:
+                configMapKeyRef:
+                  name: snow-config
+                  key: snowflake-settings.starting-epoch
+            - name: snowflake-settings.datacenter-id
+              valueFrom:
+                configMapKeyRef:
+                  name: snow-config
+                  key: snowflake-settings.datacenter-id
+          volumeMounts: # альтернативный способ подключить тот же ConfigMap, как файлы, а не как переменные окружения
+            - name: snow-config-volume
+              mountPath: /config
+              readOnly: true
+            - name: worker-config-volume
+              mountPath: /etc/snowflake
+              readOnly: false
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: "/management/health/liveness"
+              port: 8080
+            initialDelaySeconds: 15
+            timeoutSeconds: 2
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: "/management/health/readiness"
+              port: 8080
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+            periodSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+      volumes: # нужен только для альтернативного способа через файлы
+        - name: snow-config-volume
+          configMap:
+            name: snow-config
+        - name: worker-config-volume # для передачи worker-id между контейнерами
+          emptyDir: { } # передаёт файл из initContainer → основной контейнер, Spring Boot читает файл и присваивает свойству
+                        # добавление env - альтернатива (если Spring не читает файл)
