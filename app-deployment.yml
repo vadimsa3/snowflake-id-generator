@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: snow-deployment
+  annotations:
+    kubernetes.io/change-cause: "Update to 2.2" # ошибочная версия образа
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: snow
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+  template:
+    metadata:
+      labels:
+        app: snow
+    spec:
+      containers:
+        - name: snowflake
+          image: vadimsavchuk/my-repo:snowflake-2.2 # локальный snowflake:1.0 не работает с кластером kind нужен удаленный образ
+          env:
+            - name: spring.application.name
+              valueFrom:
+                configMapKeyRef:
+                  name: snow-config
+                  key: spring.application.name
+            - name: snowflake-settings.starting-epoch
+              valueFrom:
+                configMapKeyRef:
+                  name: snow-config
+                  key: snowflake-settings.starting-epoch
+            - name: snowflake-settings.datacenter-id
+              valueFrom:
+                configMapKeyRef:
+                  name: snow-config
+                  key: snowflake-settings.datacenter-id
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: "/management/health/liveness"
+              port: 8080
+            initialDelaySeconds: 15
+            timeoutSeconds: 2
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: "/management/health/readiness"
+              port: 8080
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+            periodSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
