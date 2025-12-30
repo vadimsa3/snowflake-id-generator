@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluentd
+  labels:
+    app: fluentd
+spec:
+  selector:
+    matchLabels:
+      app: fluentd
+  template:
+    metadata:
+      labels:
+        app: fluentd
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/worker
+                    operator: Exists
+      containers:
+        - name: fluentd
+          image: fluent/fluentd:edge-debian
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "500Mi"
+          volumeMounts:
+            - mountPath: /var/log
+              name: varlog
+            - mountPath: /var/log/containers
+              name: containers
+              readOnly: true
+            - mountPath: /fluentd/etc
+              name: config-volume
+
+      volumes:
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: containers
+          hostPath:
+            path: /var/log/containers
+        - name: config-volume
+          configMap:
+            name: fluentd-config
+
+      # разрешает размещение на control-plane нодах (игнорирует taint)
+      tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"

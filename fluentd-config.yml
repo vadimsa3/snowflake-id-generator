@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluentd-config
+data: # для Kind кластера (тест: генерирует тестовые логи т.к. в Kind нет /var/log/containers/)
+  fluent.conf: |
+    <source>
+      @type dummy
+      dummy {"message": "Fluentd test log", "app": "snowflake"}
+      tag snow.test
+      interval 5s
+    </source>
+
+    <match snow.**>
+      @type stdout
+    </match>
+
+# для реального кластера и чтения реальных файлов логов (не работает для Kind кластера)
+#data:
+#  fluent.conf: |
+#    <source>
+#      @type tail
+#      path /var/log/containers/*_snow-deployment*.log
+#      pos_file /var/log/fluentd-snow.pos
+#      tag kubernetes.snow.*
+#      read_from_head true
+#      <parse>
+#        @type cri
+#      </parse>
+#    </source>
+#
+#    <filter kubernetes.snow.**>
+#      @type kubernetes_metadata
+#    </filter>
+#
+#    <filter kubernetes.snow.**>
+#      @type grep
+#      <regexp>
+#        key kubernetes.labels.app # ищет label app: snow
+#        pattern snow # только Snowflake поды
+#      </regexp>
+#    </filter>
+#
+#    <match kubernetes.snow.**>
+#      @type stdout
+#    </match>
